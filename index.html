@@ -208,6 +208,23 @@
     .add-item-wrap { margin-top: 12px; }
     .btn-add-item { width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px; font-size: 0.875rem; font-weight: 500; color: var(--h400); border: 2px dashed var(--h200); border-radius: 12px; transition: all 0.15s; }
     .btn-add-item:hover { color: var(--h600); border-color: var(--h300); background: white; }
+
+    /* Share button */
+    .btn-share { display: inline-flex; align-items: center; gap: 6px; font-size: 0.75rem; font-weight: 500; padding: 6px 12px; border-radius: 8px; transition: all 0.2s; }
+    .btn-share.idle { color: var(--h600); background: var(--h50); }
+    .btn-share.idle:hover { background: var(--h100); color: var(--h700); }
+    .btn-share.copied { color: #059669; background: #d1fae5; }
+
+    /* Toast */
+    #share-toast {
+      position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%) translateY(12px);
+      background: #111827; color: white; font-size: 0.875rem; font-weight: 500;
+      padding: 10px 20px; border-radius: 10px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.18);
+      opacity: 0; transition: opacity 0.2s, transform 0.2s; pointer-events: none;
+      white-space: nowrap;
+    }
+    #share-toast.visible { opacity: 1; transform: translateX(-50%) translateY(0); }
   </style>
 </head>
 <body>
@@ -220,9 +237,15 @@
           <h1>Percentage Allocator</h1>
           <p>Distribute values across line items, always summing to 100%</p>
         </div>
-        <button class="btn-help" id="help-btn" title="Show help">
-          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-        </button>
+        <div style="display:flex;align-items:center;gap:8px">
+          <button class="btn-share idle" id="share-btn" title="Copy shareable link">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+            Share
+          </button>
+          <button class="btn-help" id="help-btn" title="Show help">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+          </button>
+        </div>
       </div>
       <div id="help-panel" class="help-panel hidden">
         <p class="hp-title">How to use</p>
@@ -263,6 +286,7 @@
 
   </div>
 </div>
+<div id="share-toast">Link copied to clipboard!</div>
 
 <script>
 const ITEM_COLORS = ['#2299ce','#0d4a6b','#5cb8e5','#136490','#93d0ef','#1a7fb0','#3aacdb','#08324a','#c5e7f7','#0f5a8a','#48b5df','#041b28'];
@@ -403,6 +427,9 @@ items = makeDefaults();
 
 // --- Render ---
 function renderAll() {
+  if (window.history && window.history.replaceState) {
+    window.history.replaceState(null, '', '#' + serializeState());
+  }
   renderTotalArea();
   renderActionBar();
   renderPctBar();
@@ -825,6 +852,83 @@ document.getElementById('add-item-btn').addEventListener('click', () => {
   const color = ITEM_COLORS[items.length % ITEM_COLORS.length];
   items = equalizeItems([...items, { id: genId(), name: `Item ${items.length + 1}`, percentage: 0, lockMode: 'none', lockedDollarAmount: 0, linkGroup: null, color }]);
   renderAll();
+});
+
+// --- Share / URL state ---
+function serializeState() {
+  const state = {
+    v: 1,
+    total: totalAmount,
+    currency,
+    items: items.map(i => ({
+      n: i.name,
+      p: parseFloat(i.percentage.toFixed(4)),
+      lm: i.lockMode,
+      ld: i.lockedDollarAmount,
+      lg: i.linkGroup,
+      c: i.color,
+    })),
+  };
+  return btoa(encodeURIComponent(JSON.stringify(state)));
+}
+
+function deserializeState(encoded) {
+  try {
+    const state = JSON.parse(decodeURIComponent(atob(encoded)));
+    if (!state || state.v !== 1 || !Array.isArray(state.items)) return false;
+    totalAmount = typeof state.total === 'number' && state.total >= 0 ? state.total : 1000;
+    currency = typeof state.currency === 'string' ? state.currency : '$';
+    items = state.items.map(i => ({
+      id: genId(),
+      name: typeof i.n === 'string' ? i.n : 'Item',
+      percentage: typeof i.p === 'number' ? i.p : 0,
+      lockMode: ['none','percent','dollar'].includes(i.lm) ? i.lm : 'none',
+      lockedDollarAmount: typeof i.ld === 'number' ? i.ld : 0,
+      linkGroup: typeof i.lg === 'string' ? i.lg : null,
+      color: typeof i.c === 'string' ? i.c : ITEM_COLORS[0],
+    }));
+    return true;
+  } catch { return false; }
+}
+
+// Load from URL hash on startup
+(function() {
+  const hash = window.location.hash.slice(1);
+  if (hash) deserializeState(hash);
+})();
+
+let shareToastTimer = null;
+const SVG_SHARE = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>`;
+const SVG_CHECK = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+
+function flashShareCopied(msg) {
+  const btn = document.getElementById('share-btn');
+  const toast = document.getElementById('share-toast');
+  btn.classList.replace('idle', 'copied');
+  btn.innerHTML = SVG_CHECK + ' Copied!';
+  toast.textContent = msg || 'Link copied to clipboard!';
+  toast.classList.add('visible');
+  clearTimeout(shareToastTimer);
+  shareToastTimer = setTimeout(() => {
+    btn.classList.replace('copied', 'idle');
+    btn.innerHTML = SVG_SHARE + ' Share';
+    toast.classList.remove('visible');
+  }, 2500);
+}
+
+document.getElementById('share-btn').addEventListener('click', () => {
+  const encoded = serializeState();
+  const url = window.location.origin + window.location.pathname + '#' + encoded;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(url).then(() => {
+      flashShareCopied('Link copied to clipboard!');
+    }).catch(() => {
+      window.prompt('Copy this link:', url);
+    });
+  } else {
+    // file:// or insecure context — show prompt so user can copy manually
+    window.prompt('Copy this link:', url);
+  }
 });
 
 // Initial render
