@@ -4,6 +4,11 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Percentage Allocator</title>
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#2299ce" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="% Alloc" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
@@ -116,7 +121,7 @@
     /* Column headers */
     .col-headers { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-bottom: 8px; padding: 0 4px; }
     .col-headers span { font-size: 0.75rem; color: #9ca3af; }
-    .ch-pct { width: 64px; text-align: right; }
+    .ch-pct { width: 112px; text-align: right; }
     .ch-amt { width: 96px; text-align: right; }
     .ch-spacer { width: 112px; flex-shrink: 0; }
 
@@ -151,8 +156,12 @@
     .slider-handle.is-dragging { transform: translateY(-50%) scale(1.12) !important; cursor: grabbing !important; }
 
     /* Pct display */
-    .item-pct-wrap { width: 64px; flex-shrink: 0; }
-    .item-pct-btn { width: 100%; text-align: right; font-size: 0.875rem; font-weight: 600; color: #1f2937; padding: 2px 4px; border-radius: 4px; transition: all 0.15s; display: block; }
+    .item-pct-wrap { width: 112px; flex-shrink: 0; }
+    .item-pct-stepper { display: flex; align-items: center; gap: 3px; justify-content: flex-end; }
+    .btn-pct-step { width: 22px; height: 22px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 1rem; font-weight: 500; color: #6b7280; background: #f3f4f6; transition: all 0.15s; line-height: 1; flex-shrink: 0; }
+    .btn-pct-step:hover:not(:disabled) { background: var(--h100); color: var(--h600); }
+    .btn-pct-step:disabled { opacity: 0.3; cursor: not-allowed; }
+    .item-pct-btn { text-align: right; font-size: 0.875rem; font-weight: 600; color: #1f2937; padding: 2px 4px; border-radius: 4px; transition: all 0.15s; display: block; }
     .item-pct-btn:hover:not(:disabled) { color: var(--h600); background: var(--h50); }
     .item-pct-btn:disabled { color: #9ca3af; cursor: not-allowed; }
     .item-pct-edit { display: flex; align-items: center; gap: 2px; }
@@ -225,6 +234,22 @@
       white-space: nowrap;
     }
     #share-toast.visible { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    /* Responsive: slider wraps to its own row */
+    @media (max-width: 600px) {
+      .item-row { flex-wrap: wrap; column-gap: 10px; row-gap: 0; }
+      .item-name-wrap { flex: 1; width: auto; min-width: 0; }
+      .item-slider-wrap { order: 10; flex: 0 0 100%; padding-top: 8px; border-top: 1px solid #f3f4f6; margin-top: 4px; }
+      #col-headers { display: none; }
+    }
+
+    /* Extra compact for small phones: hide amount, shrink stepper */
+    @media (max-width: 480px) {
+      .item-amt-wrap { display: none; }
+      .item-pct-wrap { width: 88px; }
+      .btn-pct-step { width: 18px; height: 18px; font-size: 0.875rem; }
+      .btn-lock, .btn-link, .btn-delete { padding: 4px; }
+    }
   </style>
 </head>
 <body>
@@ -578,7 +603,11 @@ function buildItemRow(item) {
   // Pct
   const pctHtml = editingPctId === item.id
     ? `<div class="item-pct-wrap"><div class="item-pct-edit"><input class="item-pct-input" id="inp-pct-${item.id}" value="${fmtPct(item.percentage)}" /><span class="item-pct-sfx">%</span></div></div>`
-    : `<div class="item-pct-wrap"><button class="item-pct-btn" ${locked ? 'disabled' : ''} data-a="edit-pct" data-id="${item.id}">${fmtPct(item.percentage)}%</button></div>`;
+    : `<div class="item-pct-wrap"><div class="item-pct-stepper">
+        <button class="btn-pct-step" ${locked ? 'disabled' : ''} data-a="decrement-pct" data-id="${item.id}" title="Decrease by 1%">−</button>
+        <button class="item-pct-btn" ${locked ? 'disabled' : ''} data-a="edit-pct" data-id="${item.id}">${fmtPct(item.percentage)}%</button>
+        <button class="btn-pct-step" ${locked ? 'disabled' : ''} data-a="increment-pct" data-id="${item.id}" title="Increase by 1%">+</button>
+      </div></div>`;
 
   // Amount
   let amtHtml = '';
@@ -774,6 +803,18 @@ document.addEventListener('click', e => {
     editingPctId = id; editingNameId = null; editingAmountId = null;
     renderAll();
   }
+  if (a === 'increment-pct') {
+    const item = items.find(i => i.id === id);
+    if (!item || isLocked(item)) return;
+    items = redistribute(items, id, Math.min(100, item.percentage + 1));
+    renderAll();
+  }
+  if (a === 'decrement-pct') {
+    const item = items.find(i => i.id === id);
+    if (!item || isLocked(item)) return;
+    items = redistribute(items, id, Math.max(0, item.percentage - 1));
+    renderAll();
+  }
   if (a === 'edit-amt') {
     const item = items.find(i => i.id === id);
     if (!item || item.lockMode === 'percent') return;
@@ -933,6 +974,54 @@ document.getElementById('share-btn').addEventListener('click', () => {
 
 // Initial render
 renderAll();
+
+// PWA setup: generate apple-touch-icon via Canvas + register service worker
+(function() {
+  function rrFill(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.arcTo(x + w, y, x + w, y + r, r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+    ctx.lineTo(x + r, y + h);
+    ctx.arcTo(x, y + h, x, y + h - r, r);
+    ctx.lineTo(x, y + r);
+    ctx.arcTo(x, y, x + r, y, r);
+    ctx.closePath();
+    ctx.fill();
+  }
+  function drawAppIcon(size) {
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    const ctx = c.getContext('2d');
+    const sc = size / 512;
+    const grad = ctx.createLinearGradient(0, 0, size, size);
+    grad.addColorStop(0, '#2299ce');
+    grad.addColorStop(1, '#083349');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, size, size);
+    [[168, 141, 0.92], [238, 123, 0.76], [308, 88, 0.56]].forEach(([y, fw, op]) => {
+      ctx.fillStyle = 'rgba(255,255,255,0.16)';
+      rrFill(ctx, 80*sc, y*sc, 352*sc, 52*sc, 12*sc);
+      ctx.globalAlpha = op;
+      ctx.fillStyle = 'white';
+      rrFill(ctx, 80*sc, y*sc, fw*sc, 52*sc, 12*sc);
+      ctx.globalAlpha = 1;
+    });
+    return c.toDataURL('image/png');
+  }
+  try {
+    const iconHref = drawAppIcon(180);
+    const link = document.createElement('link');
+    link.rel = 'apple-touch-icon';
+    link.href = iconHref;
+    document.head.appendChild(link);
+  } catch(e) {}
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
+  }
+})();
 </script>
 </body>
 </html>
