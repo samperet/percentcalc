@@ -12,7 +12,7 @@
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
-    button { cursor: pointer; border: none; background: none; font-family: inherit; font-size: inherit; line-height: inherit; }
+    button { cursor: pointer; border: none; background: none; font-family: inherit; font-size: inherit; line-height: inherit; touch-action: manipulation; }
     input { font-family: inherit; font-size: inherit; }
 
     :root {
@@ -463,6 +463,32 @@ function renderAll() {
   renderItems();
 }
 
+// Lightweight update during drag — mutates existing DOM instead of rebuilding it
+let _rafPending = false;
+function renderDragFrame() {
+  if (_rafPending) return;
+  _rafPending = true;
+  requestAnimationFrame(() => {
+    _rafPending = false;
+    renderPctBar();
+    items.forEach(item => {
+      const row = document.querySelector(`[data-item-id="${item.id}"]`);
+      if (!row) return;
+      const pct = Math.max(0, Math.min(100, item.percentage));
+      const fill = row.querySelector('.slider-fill');
+      if (fill) fill.style.width = pct + '%';
+      const handle = row.querySelector('[data-a="drag-start"]');
+      if (handle) handle.style.left = `calc(${pct}% - 8px)`;
+      const pctBtn = row.querySelector('.item-pct-btn');
+      if (pctBtn) pctBtn.textContent = fmtPct(pct) + '%';
+      if (totalAmount > 0 && item.lockMode !== 'dollar') {
+        const amtSpan = row.querySelector('.item-amt-btn > span');
+        if (amtSpan) amtSpan.textContent = fmtAmt(calcAmt(pct, totalAmount), currency);
+      }
+    });
+  });
+}
+
 function renderTotalArea() {
   const el = document.getElementById('total-area');
   if (editingTotal) {
@@ -794,8 +820,23 @@ document.addEventListener('click', e => {
   const a = t.dataset.a, id = t.dataset.id;
 
   if (a === 'edit-name') {
-    editingNameId = id; editingPctId = null; editingAmountId = null;
-    renderAll();
+    const hadOtherEdit = editingPctId || editingAmountId;
+    editingNameId = id; editingPctId = null; editingAmountId = null; openLinkMenuId = null;
+    if (hadOtherEdit) { renderAll(); return; }
+    // Fast path: direct DOM swap keeps focus() inside the gesture context for iOS keyboard
+    const row = t.closest('[data-item-id]');
+    const wrap = row?.querySelector('.item-name-wrap');
+    const item = items.find(i => i.id === id);
+    if (!wrap || !item) { renderAll(); return; }
+    wrap.innerHTML = `<input class="item-name-input" id="inp-name-${id}" value="${escA(item.name)}" />`;
+    const inp = wrap.querySelector('input');
+    inp.focus(); inp.select();
+    inp.addEventListener('blur', () => commitName(id, inp.value));
+    inp.addEventListener('keydown', ev => {
+      if (ev.key === 'Enter') commitName(id, inp.value);
+      if (ev.key === 'Escape') { editingNameId = null; renderAll(); }
+    });
+    return;
   }
   if (a === 'edit-pct') {
     const item = items.find(i => i.id === id);
@@ -864,7 +905,7 @@ document.addEventListener('mousedown', e => {
 document.addEventListener('mousemove', e => {
   if (!draggingItemId) return;
   items = redistribute(items, draggingItemId, pctFromX(draggingItemId, e.clientX));
-  renderAll();
+  renderDragFrame();
 });
 document.addEventListener('mouseup', () => {
   if (draggingItemId) { draggingItemId = null; renderAll(); }
@@ -873,10 +914,10 @@ document.addEventListener('touchmove', e => {
   if (!draggingItemId) return;
   e.preventDefault();
   items = redistribute(items, draggingItemId, pctFromX(draggingItemId, e.touches[0].clientX));
-  renderAll();
+  renderDragFrame();
 }, { passive: false });
 document.addEventListener('touchend', () => {
-  if (draggingItemId) { draggingItemId = null; }
+  if (draggingItemId) { draggingItemId = null; renderAll(); }
 });
 
 // Help toggle
