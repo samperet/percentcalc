@@ -541,7 +541,9 @@ function renderActionBar() {
     </div>
     <button class="btn-normalize" id="btn-normalize">Normalize</button>`;
   }
+  const allLocked = items.length > 0 && items.every(i => isLocked(i));
   html += `<button class="btn-action" id="btn-equalize" ${unlockedCount === 0 ? 'disabled' : ''}>${SVG.alignCtr} Equalize</button>`;
+  html += `<button class="btn-action" id="btn-lock-all" title="${allLocked ? 'Unlock every item' : 'Lock every item at its current %'}">${allLocked ? SVG.unlock : SVG.lock} ${allLocked ? 'Unlock all' : 'Lock all'}</button>`;
   html += `<button class="btn-reset" id="btn-reset">${SVG.rotateCcw} Reset</button>`;
   el.innerHTML = html;
 
@@ -553,6 +555,13 @@ function renderActionBar() {
     });
   }
   document.getElementById('btn-equalize').addEventListener('click', () => { items = equalizeItems(items); renderAll(); });
+  document.getElementById('btn-lock-all').addEventListener('click', () => {
+    const everyLocked = items.length > 0 && items.every(i => isLocked(i));
+    items = everyLocked
+      ? items.map(i => ({ ...i, lockMode: 'none' }))
+      : items.map(i => i.lockMode === 'none' ? { ...i, lockMode: 'percent' } : i);
+    renderAll();
+  });
   document.getElementById('btn-reset').addEventListener('click', () => {
     items = makeDefaults();
     editingNameId = editingPctId = editingAmountId = openLinkMenuId = null;
