@@ -51,8 +51,6 @@
     .help-panel ul { list-style: none; color: #0d4a6b; display: flex; flex-direction: column; gap: 4px; }
     .help-panel ul ul { padding-left: 16px; }
     .help-panel b { font-weight: 600; }
-    .help-panel .c-amber { color: #d97706; font-weight: 600; }
-    .help-panel .c-teal  { color: #0d9488; font-weight: 600; }
     .hidden { display: none !important; }
 
     /* Card */
@@ -174,8 +172,6 @@
     .item-amt-wrap { width: 96px; flex-shrink: 0; }
     .item-amt-btn { width: 100%; text-align: right; font-size: 0.875rem; font-weight: 600; padding: 2px 4px; border-radius: 4px; display: flex; align-items: center; justify-content: flex-end; gap: 2px; transition: all 0.15s; }
     .item-amt-btn.editable:hover { color: var(--h600); background: var(--h50); }
-    .item-amt-btn.dlocked { color: #0d9488; }
-    .item-amt-btn.dlocked:hover { background: #f0fdfa; }
     .item-amt-btn.plocked { color: #9ca3af; cursor: not-allowed; }
     .item-amt-btn.normal { color: #4b5563; }
     .item-amt-edit { display: flex; align-items: center; gap: 2px; }
@@ -190,8 +186,6 @@
     .btn-lock.lk-none:hover  { background: #f3f4f6; color: #4b5563; }
     .btn-lock.lk-pct    { background: #fef3c7; color: #d97706; }
     .btn-lock.lk-pct:hover   { background: #fde68a; }
-    .btn-lock.lk-dollar { background: #ccfbf1; color: #0d9488; }
-    .btn-lock.lk-dollar:hover { background: #99f6e4; }
     .btn-link { padding: 6px; border-radius: 8px; transition: all 0.15s; display: flex; align-items: center; gap: 4px; color: #9ca3af; position: relative; }
     .btn-link:hover { background: #f3f4f6; color: #4b5563; }
     .link-badge { font-size: 0.75rem; font-weight: 700; line-height: 1; }
@@ -286,12 +280,7 @@
           <li><b>Drag slider</b> — drag the colored handle to adjust; other unlocked items auto-redistribute.</li>
           <li><b>Click % or amount</b> — click either number to type an exact value.</li>
           <li><b>Click name</b> — click an item name to rename it.</li>
-          <li><b>Lock (click icon to cycle)</b>
-            <ul>
-              <li><span class="c-amber">% Lock</span> — freezes the percentage; dollar amount follows the total.</li>
-              <li><span class="c-teal">$ Lock</span> — freezes the dollar amount; percentage auto-adjusts when the total changes.</li>
-            </ul>
-          </li>
+          <li><b>Lock</b> — click the lock icon to freeze an item's percentage; other unlocked items redistribute around it.</li>
           <li><b>Link groups (A–E)</b> — items in the same group scale proportionally when any one is dragged.</li>
         </ul>
       </div>
@@ -339,7 +328,6 @@ const SVG = {
   unlock:     `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>`,
   trash:      `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>`,
   link:       `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>`,
-  dollar:     (sz=11) => `<svg xmlns="http://www.w3.org/2000/svg" width="${sz}" height="${sz}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="2" x2="12" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>`,
   plus:       `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>`,
 };
 
@@ -356,7 +344,7 @@ let openLinkMenuId = null;
 let draggingItemId = null;
 
 // --- Allocation logic ---
-function isLocked(item) { return item.lockMode === 'percent' || item.lockMode === 'dollar'; }
+function isLocked(item) { return item.lockMode === 'percent'; }
 
 function redistribute(items, changedId, rawValue) {
   const changed = items.find(i => i.id === changedId);
@@ -412,20 +400,6 @@ function equalizeItems(items) {
   if (!free.length) return items;
   const share = Math.max(0, (100 - lockedSum) / free.length);
   return items.map(i => isLocked(i) ? i : { ...i, percentage: share });
-}
-
-function recalcDollarLocks(items, total) {
-  if (total <= 0) return items;
-  let updated = items.map(i => i.lockMode === 'dollar' ? { ...i, percentage: Math.min(100, (i.lockedDollarAmount / total) * 100) } : i);
-  const dSum = updated.filter(i => i.lockMode === 'dollar').reduce((s, i) => s + i.percentage, 0);
-  const pSum = updated.filter(i => i.lockMode === 'percent').reduce((s, i) => s + i.percentage, 0);
-  const free = updated.filter(i => i.lockMode === 'none');
-  const freeSum = free.reduce((s, i) => s + i.percentage, 0);
-  const avail = Math.max(0, 100 - dSum - pSum);
-  if (!free.length) return updated;
-  const freeIds = new Set(free.map(i => i.id));
-  if (freeSum <= 0) return updated.map(i => freeIds.has(i.id) ? { ...i, percentage: Math.max(0, avail / free.length) } : i);
-  return updated.map(i => freeIds.has(i.id) ? { ...i, percentage: Math.max(0, i.percentage * (avail / freeSum)) } : i);
 }
 
 function redistributeByDollar(items, id, dollarVal, total) {
@@ -488,7 +462,7 @@ function renderDragFrame() {
       if (handle) handle.style.left = `calc(${pct}% - 8px)`;
       const pctBtn = row.querySelector('.item-pct-btn');
       if (pctBtn) pctBtn.textContent = fmtPct(pct) + '%';
-      if (totalAmount > 0 && item.lockMode !== 'dollar') {
+      if (totalAmount > 0) {
         const amtSpan = row.querySelector('.item-amt-btn > span');
         if (amtSpan) amtSpan.textContent = fmtAmt(calcAmt(pct, totalAmount), currency);
       }
@@ -618,10 +592,9 @@ function renderItems() {
 
 function buildItemRow(item) {
   const locked = isLocked(item);
-  const isDlocked = item.lockMode === 'dollar';
   const isPctlocked = item.lockMode === 'percent';
   const lg = item.linkGroup ? LINK_GROUPS.find(g => g.id === item.linkGroup) : null;
-  const dispAmt = isDlocked ? item.lockedDollarAmount : calcAmt(item.percentage, totalAmount);
+  const dispAmt = calcAmt(item.percentage, totalAmount);
   const pct = Math.max(0, Math.min(100, item.percentage));
 
   // Color dot
@@ -658,21 +631,20 @@ function buildItemRow(item) {
     if (editingAmountId === item.id) {
       amtHtml = `<div class="item-amt-wrap"><div class="item-amt-edit">
         <span class="item-amt-cur">${esc(currency)}</span>
-        <input class="item-amt-input" id="inp-amt-${item.id}" value="${dispAmt.toFixed(2)}" style="color:${isDlocked ? '#0d9488' : '#1f2937'}" />
+        <input class="item-amt-input" id="inp-amt-${item.id}" value="${dispAmt.toFixed(2)}" />
       </div></div>`;
     } else {
-      const cls = !canEdit ? 'plocked' : isDlocked ? 'dlocked editable' : 'normal editable';
-      const dico = isDlocked ? SVG.dollar(11) : '';
+      const cls = canEdit ? 'normal editable' : 'plocked';
       amtHtml = `<div class="item-amt-wrap"><button class="item-amt-btn ${cls}" ${!canEdit ? 'disabled' : ''} data-a="edit-amt" data-id="${item.id}" title="${canEdit ? 'Click to set a specific amount' : 'Unlock to edit'}">
-        ${dico}<span>${fmtAmt(dispAmt, currency)}</span>
+        <span>${fmtAmt(dispAmt, currency)}</span>
       </button></div>`;
     }
   }
 
   // Lock button
-  const lkClass = isDlocked ? 'lk-dollar' : isPctlocked ? 'lk-pct' : 'lk-none';
-  const lkTitle = isDlocked ? `${currency} locked` : isPctlocked ? '% locked' : 'Unlocked';
-  const lkIcon = isDlocked ? SVG.dollar(11) + SVG.lock : isPctlocked ? SVG.lock : SVG.unlock;
+  const lkClass = isPctlocked ? 'lk-pct' : 'lk-none';
+  const lkTitle = isPctlocked ? 'Locked — click to unlock' : 'Unlocked — click to lock %';
+  const lkIcon = isPctlocked ? SVG.lock : SVG.unlock;
 
   // Link button
   const lgStyle = lg ? `background:${lg.bg};color:${lg.text}` : '';
@@ -805,12 +777,7 @@ function commitAmt(id, val) {
   if (!item) { renderAll(); return; }
   const p = parseFloat(val.replace(/[^0-9.]/g, ''));
   if (!isNaN(p) && p >= 0) {
-    if (item.lockMode === 'dollar') {
-      items = items.map(i => i.id === id ? { ...i, lockedDollarAmount: p } : i);
-      items = recalcDollarLocks(items, totalAmount);
-    } else {
-      items = redistributeByDollar(items, id, p, totalAmount);
-    }
+    items = redistributeByDollar(items, id, p, totalAmount);
   }
   renderAll();
 }
@@ -825,7 +792,6 @@ function commitTotal() {
   const newTotal = isNaN(p) || p < 0 ? totalAmount : p;
   currency = newCur;
   totalAmount = newTotal;
-  items = recalcDollarLocks(items, newTotal);
   renderAll();
 }
 
@@ -881,14 +847,8 @@ document.addEventListener('click', e => {
   if (a === 'cycle-lock') {
     const item = items.find(i => i.id === id);
     if (!item) return;
-    const cycle = { none: 'percent', percent: 'dollar', dollar: 'none' };
-    const next = cycle[item.lockMode];
-    if (next === 'dollar') {
-      const amt = calcAmt(item.percentage, totalAmount);
-      items = items.map(i => i.id === id ? { ...i, lockMode: 'dollar', lockedDollarAmount: amt } : i);
-    } else {
-      items = items.map(i => i.id === id ? { ...i, lockMode: next } : i);
-    }
+    const next = item.lockMode === 'percent' ? 'none' : 'percent';
+    items = items.map(i => i.id === id ? { ...i, lockMode: next } : i);
     renderAll();
   }
   if (a === 'toggle-lm') {
@@ -980,7 +940,7 @@ function deserializeState(encoded) {
       id: genId(),
       name: typeof i.n === 'string' ? i.n : 'Item',
       percentage: typeof i.p === 'number' ? i.p : 0,
-      lockMode: ['none','percent','dollar'].includes(i.lm) ? i.lm : 'none',
+      lockMode: i.lm === 'percent' || i.lm === 'dollar' ? 'percent' : 'none',
       lockedDollarAmount: typeof i.ld === 'number' ? i.ld : 0,
       linkGroup: typeof i.lg === 'string' ? i.lg : null,
       color: typeof i.c === 'string' ? i.c : ITEM_COLORS[0],
